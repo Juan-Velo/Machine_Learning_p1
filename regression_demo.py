@@ -1,189 +1,240 @@
 from manim import *
 import numpy as np
-from sklearn.linear_model import LinearRegression, Ridge
+from sklearn.linear_model import LinearRegression, Ridge, Lasso
 from sklearn.preprocessing import PolynomialFeatures
+from sklearn.pipeline import make_pipeline
+from scipy.optimize import curve_fit
 
-class RegressionMasterclass(Scene):
+class MasterRegressionDemo(ThreeDScene):
     def construct(self):
-        # --- CONFIGURACIÓN ESTÉTICA ---
-        self.camera.background_color = "#0F172A" # Slate 900 (Azul oscuro elegante)
+        # ---------------------------------------------------------
+        # ESCENA 0: INTRODUCCIÓN
+        # ---------------------------------------------------------
+        title = Text("Regresión: De Simple a Avanzada", font_size=42, color=BLUE)
+        subtitle = Text("Grupo 11 - Machine Learning", font_size=28, color=GRAY).next_to(title, DOWN)
         
-        # Datos Sintéticos (Semilla fija para consistencia)
-        np.random.seed(42)
-        self.x_vals = np.linspace(1, 9, 15)
-        # Una curva cuadrática con ruido
-        self.y_vals = 0.5 * (self.x_vals - 5)**2 + 2 + np.random.normal(0, 0.8, 15)
+        # Iniciar en vista 2D (phi=0, theta=-90 es plano 2D normal)
+        self.set_camera_orientation(phi=0, theta=-90 * DEGREES)
         
-        # --- SECUENCIA ---
-        self.intro_scene()
-        self.linear_failure()
-        self.basis_functions()
-        self.overfitting_chaos()
-        self.regularization_fix()
-        self.outro_metrics()
+        self.play(Write(title), FadeIn(subtitle))
+        self.wait(3)
+        self.play(FadeOut(title), FadeOut(subtitle))
 
-    def intro_scene(self):
-        # 0:00 - 0:15
-        title = Text("Regression Analysis", font_size=48, weight=BOLD).to_edge(UP)
-        subtitle = Text("From Linear Bias to Regularized Robustness", font_size=32, color=BLUE_C).next_to(title, DOWN)
-        
-        line = Line(LEFT*4, RIGHT*4, color=BLUE_E).next_to(subtitle, DOWN)
-        
-        authors = VGroup(
-            Text("Ladera La Torre, Fabricio Godofredo", font_size=24, color=GRAY_B),
-            Text("Velo Poma, Juan David", font_size=24, color=GRAY_B)
-        ).arrange(DOWN, buff=0.2).next_to(line, DOWN, buff=0.5)
-
-        self.play(Write(title), FadeIn(subtitle, shift=UP))
-        self.play(Create(line), Write(authors))
-        self.wait(6) # Tiempo para leer la intro
-        self.play(FadeOut(Group(title, subtitle, line, authors)))
-
-    def linear_failure(self):
-        # 0:15 - 0:40
-        # Ejes
+        # ---------------------------------------------------------
+        # ESCENA 1: REGRESIÓN LINEAL SIMPLE (2D)
+        # ---------------------------------------------------------
+        # Configurar ejes 2D
         axes = Axes(
-            x_range=[0, 10, 1], 
-            y_range=[-2, 12, 2], 
-            axis_config={"color": GREY, "include_numbers": False},
-            x_length=7, y_length=5
-        ).to_edge(LEFT, buff=1)
+            x_range=[0, 10, 1], y_range=[0, 10, 1],
+            x_length=9, y_length=6,
+            axis_config={"include_numbers": True}
+        ).to_edge(DOWN)
         
-        labels = axes.get_axis_labels(x_label="Area (x)", y_label="Price (y)")
+        # --- CORRECCIÓN AQUÍ: Usamos \\text{} para la ñ ---
+        labels = axes.get_axis_labels(x_label="\\text{Tamaño }(x)", y_label="\\text{Precio }(y)")
+        
         self.play(Create(axes), Write(labels))
-
-        # Puntos
-        points = VGroup(*[Dot(axes.c2p(x, y), color=WHITE, radius=0.08) for x, y in zip(self.x_vals, self.y_vals)])
-        self.play(FadeIn(points, lag_ratio=0.1))
         
-        # Modelo Lineal
-        model = LinearRegression().fit(self.x_vals.reshape(-1, 1), self.y_vals)
-        line = axes.plot(lambda t: model.predict([[t]])[0], color=RED, x_range=[0, 10])
+        # Datos Lineales
+        np.random.seed(42)
+        x_lin = np.linspace(1, 9, 15).reshape(-1, 1)
+        y_lin = 0.7 * x_lin + 1.5 + np.random.normal(0, 0.6, size=x_lin.shape)
         
-        eq_linear = MathTex(r"h_\theta(x) = \theta_0 + \theta_1 x", color=RED).to_corner(UR)
+        dots_lin = VGroup()
+        for x, y in zip(x_lin.flatten(), y_lin.flatten()):
+            dots_lin.add(Dot(point=axes.c2p(x, y), color=YELLOW, radius=0.08))
+            
+        self.play(ShowIncreasingSubsets(dots_lin), run_time=2)
         
-        self.play(Create(line), Write(eq_linear))
-        self.wait(5) # "Buscamos el vector de pesos..."
-
-        # Guardar para la siguiente escena
-        self.axes = axes
-        self.points = points
-        self.line_linear = line
-        self.eq_current = eq_linear
-
-    def basis_functions(self):
-        # 0:40 - 1:20
-        # Texto Underfitting
-        fail_text = Text("Underfitting (High Bias)", font_size=36, color=RED).next_to(self.axes, DOWN)
-        self.play(Write(fail_text))
-        self.wait(4) # "El mercado tiene curvas..."
-
-        # Transformación de la ecuación
-        self.play(FadeOut(fail_text))
+        # Ajuste Lineal
+        model_lin = LinearRegression().fit(x_lin, y_lin)
+        def pred_lin(x): return model_lin.predict([[x]]).item()
         
-        eq_poly = MathTex(r"h(x) = \theta_0 + \theta_1 x + \theta_2 x^2", color=GREEN).to_corner(UR)
-        basis_map = MathTex(r"\phi(x) \rightarrow [1, x, x^2]", color=GREEN_B, font_size=32).next_to(eq_poly, DOWN)
+        line_lin = axes.plot(pred_lin, color=BLUE, x_range=[0, 10])
+        eq_lin = MathTex(r"y = mx + b", color=BLUE).to_edge(UR).shift(LEFT)
         
-        self.play(TransformMatchingTex(self.eq_current, eq_poly))
-        self.play(FadeIn(basis_map))
+        self.play(Create(line_lin), Write(eq_lin))
         
-        # Modelo Polinomial (Grado 2)
-        poly2 = PolynomialFeatures(degree=2)
-        x_poly2 = poly2.fit_transform(self.x_vals.reshape(-1, 1))
-        model2 = LinearRegression().fit(x_poly2, self.y_vals)
+        # Mostrar Error (Residuos)
+        error_lines = VGroup()
+        for x, y in zip(x_lin.flatten(), y_lin.flatten()):
+            error_lines.add(Line(axes.c2p(x, y), axes.c2p(x, pred_lin(x)), color=ORANGE))
         
-        curve = self.axes.plot(
-            lambda t: model2.predict(poly2.transform([[t]]))[0], 
-            color=GREEN, x_range=[0, 10]
-        )
-        
-        self.play(ReplacementTransform(self.line_linear, curve))
-        self.wait(8) # Explicación de linealidad en parámetros
-
-        self.curve_ok = curve
-        self.eq_current = eq_poly
-        self.basis_map = basis_map
-
-    def overfitting_chaos(self):
-        # 1:20 - 1:55
-        # Transición a caos
-        warning = Text("Degree = 15", font_size=32, color=ORANGE).next_to(self.eq_current, DOWN, buff=0.5)
-        self.play(FadeOut(self.basis_map), Write(warning))
-        
-        # Modelo Overfitting (Grado alto)
-        poly_high = PolynomialFeatures(degree=15)
-        x_poly_high = poly_high.fit_transform(self.x_vals.reshape(-1, 1))
-        model_high = LinearRegression().fit(x_poly_high, self.y_vals)
-        
-        curve_bad = self.axes.plot(
-            lambda t: model_high.predict(poly_high.transform([[t]]))[0], 
-            color=RED, x_range=[1, 9] # Rango acotado para evitar disparos al infinito
-        )
-        
-        overfit_label = Text("Overfitting (High Variance)", font_size=36, color=RED).next_to(self.axes, DOWN)
-        
-        self.play(ReplacementTransform(self.curve_ok, curve_bad), run_time=2)
-        self.play(Write(overfit_label))
-        self.wait(6) # "Persigue el ruido..."
-
-        self.curve_bad = curve_bad
-        self.overfit_label = overfit_label
-        self.x_poly_high = x_poly_high # Guardar datos
-        self.warning = warning
-
-    def regularization_fix(self):
-        # 1:55 - 2:30
-        # Mostrar formula Ridge
-        ridge_eq = MathTex(
-            r"J(\theta) = MSE + {\lambda} \sum \theta_j^2", 
-            tex_to_color_map={"{\lambda}": PURPLE}
-        ).to_corner(UR)
-        
-        self.play(
-            FadeOut(self.eq_current), 
-            FadeOut(self.warning),
-            Write(ridge_eq)
-        )
-        self.wait(4) # "Agregamos un castigo..."
-
-        # Aplicar Ridge
-        model_ridge = Ridge(alpha=10).fit(self.x_poly_high, self.y_vals)
-        
-        curve_ridge = self.axes.plot(
-            lambda t: model_ridge.predict(
-                PolynomialFeatures(degree=15).fit_transform([[t]])
-            )[0], 
-            color=PURPLE, x_range=[0, 10]
-        )
-        
-        ridge_label = Text("L2 Regularization (Ridge)", font_size=36, color=PURPLE).next_to(self.axes, DOWN)
-        
-        self.play(
-            ReplacementTransform(self.curve_bad, curve_ridge),
-            ReplacementTransform(self.overfit_label, ridge_label)
-        )
-        self.wait(6) # "Doma el polinomio..."
-        
-        # Limpieza final
-        self.play(FadeOut(Group(self.axes, self.points, curve_ridge, ridge_label, ridge_eq)))
-
-    def outro_metrics(self):
-        # 2:30 - Final
-        title = Text("Model Evaluation", font_size=40).to_edge(UP)
-        
-        # Comparación visual R2
-        r2_bad = MathTex(r"R^2 \approx 0.99", color=RED).shift(LEFT*3)
-        text_bad = Text("Misleading!", font_size=24, color=RED).next_to(r2_bad, DOWN)
-        
-        r2_adj = MathTex(r"R^2_{adj} = 1 - (1-R^2)\frac{n-1}{n-p-1}", color=YELLOW).shift(RIGHT*1)
-        text_good = Text("Penalizes complexity (p)", font_size=24, color=YELLOW).next_to(r2_adj, DOWN)
-
-        self.play(Write(title))
-        self.play(Write(r2_bad), FadeIn(text_bad))
+        self.play(Create(error_lines))
         self.wait(2)
-        self.play(Write(r2_adj), FadeIn(text_good))
-        self.wait(5)
         
-        final_text = Text("Thanks for watching.", font_size=32).move_to(DOWN*2)
-        self.play(Write(final_text))
+        # Limpiar Escena 1
+        self.play(FadeOut(dots_lin), FadeOut(line_lin), FadeOut(eq_lin), FadeOut(error_lines))
+
+        # ---------------------------------------------------------
+        # ESCENA 2: NO LINEAL (EXPONENCIAL)
+        # ---------------------------------------------------------
+        # Datos Exponenciales
+        x_exp = np.linspace(0.5, 7.5, 15)
+        y_exp = 0.5 * np.exp(0.5 * x_exp) + 0.5 + np.random.normal(0, 0.5, size=x_exp.shape)
+        
+        dots_exp = VGroup()
+        for x, y in zip(x_exp, y_exp):
+            if y < 10: dots_exp.add(Dot(point=axes.c2p(x, y), color=GREEN))
+            
+        self.play(FadeIn(dots_exp))
+        
+        # Intento fallido lineal
+        model_bad = LinearRegression().fit(x_exp.reshape(-1, 1), y_exp)
+        def pred_bad(x): return model_bad.predict([[x]]).item()
+        line_bad = axes.plot(pred_bad, color=RED, x_range=[0, 8])
+        
+        self.play(Create(line_bad))
+        self.wait(1)
+        
+        # Solución No Lineal (Curve Fit)
+        def func_exp(x, a, b, c): return a * np.exp(b * x) + c
+        popt, _ = curve_fit(func_exp, x_exp, y_exp, p0=[0.5, 0.5, 1])
+        def pred_curve(x): return func_exp(x, *popt)
+        
+        curve_good = axes.plot(pred_curve, color=GREEN, x_range=[0, 8])
+        
+        self.play(Transform(line_bad, curve_good))
+        self.wait(2)
+        
+        # Limpiar para 3D
+        self.play(FadeOut(axes), FadeOut(labels), FadeOut(dots_exp), FadeOut(line_bad))
+
+        # ---------------------------------------------------------
+        # ESCENA 3: REGRESIÓN MÚLTIPLE (3D) - CORREGIDA
+        # ---------------------------------------------------------
+        title_3d = Text("Regresión Múltiple (3D)", font_size=32).to_corner(UL)
+        self.add_fixed_in_frame_mobjects(title_3d)
+        self.play(Write(title_3d))
+        
+        # 1. Creamos los ejes
+        axes_3d = ThreeDAxes(
+            x_range=[0,6], y_range=[0,6], z_range=[0,6], 
+            x_length=5, y_length=5, z_length=4
+        )
+        labels_3d = axes_3d.get_axis_labels(x_label="x1", y_label="x2", z_label="y")
+        
+        # 2. AJUSTE CLAVE: Movemos los ejes ABAJO e IZQUIERDA.
+        # Esto hace que los datos (que son positivos) queden visualmente al centro.
+        group_axes = VGroup(axes_3d, labels_3d)
+        group_axes.shift(DOWN * 1.5 + LEFT * 1) 
+
+        self.play(Create(axes_3d), Write(labels_3d))
+        
+        # 3. Mover cámara con ZOOM OUT (0.6) para que nada se salga
+        self.move_camera(phi=75 * DEGREES, theta=30 * DEGREES, zoom=0.6, run_time=2)
+        
+        # Puntos 3D
+        x3 = np.random.uniform(1, 5, 15)
+        y3 = np.random.uniform(1, 5, 15)
+        z3 = 0.5*x3 + 0.5*y3 + 1 + np.random.normal(0, 0.2, 15)
+        
+        dots_3d = VGroup()
+        for x, y, z in zip(x3, y3, z3):
+            # c2p ya calcula la posición basada en los ejes desplazados
+            dots_3d.add(Dot3D(point=axes_3d.c2p(x, y, z), color=YELLOW, radius=0.08))
+            
+        self.play(FadeIn(dots_3d))
+        
+        # Plano
+        plane = Surface(
+            lambda u, v: axes_3d.c2p(u, v, 0.5*u + 0.5*v + 1),
+            u_range=[0, 6], v_range=[0, 6], resolution=(8, 8),
+            fill_opacity=0.3, stroke_width=0.5, color=BLUE
+        )
+        self.play(Create(plane))
+        
+        # Rotación ambiente
+        self.begin_ambient_camera_rotation(rate=0.2)
+        self.wait(4)
+        self.stop_ambient_camera_rotation()
+        
+        # Limpiar 3D y volver a 2D (Reseteamos zoom a 1)
+        self.play(FadeOut(dots_3d), FadeOut(plane), FadeOut(axes_3d), FadeOut(labels_3d), FadeOut(title_3d))
+        self.move_camera(phi=0, theta=-90 * DEGREES, zoom=1, run_time=1.5)
+        
+        # ---------------------------------------------------------
+        # ESCENA 4 & 5: OVERFITTING Y REGULARIZACIÓN
+        # ---------------------------------------------------------
+        # Volver a ejes 2D
+        axes = Axes(x_range=[0, 6, 1], y_range=[-2, 12, 2], x_length=8, y_length=6, axis_config={"include_numbers":True})
+        self.play(Create(axes))
+        
+        # Datos para overfitting
+        x_reg = np.linspace(0.5, 5.5, 12)
+        y_reg = 2 + 0.5 * x_reg**2 - 0.1 * x_reg**3 + np.random.normal(0, 1.5, size=len(x_reg))
+        
+        dots_reg = VGroup()
+        for x, y in zip(x_reg, y_reg): dots_reg.add(Dot(axes.c2p(x, y)))
+        self.play(FadeIn(dots_reg))
+        
+        # 1. Overfitting (Polinomio Grado 10)
+        pipe_over = make_pipeline(PolynomialFeatures(10), LinearRegression())
+        pipe_over.fit(x_reg.reshape(-1, 1), y_reg)
+        def pred_over(x): return pipe_over.predict([[x]]).item()
+        
+        curve_over = axes.plot(pred_over, color=RED, x_range=[0.5, 5.5])
+        label_over = Text("Overfitting", color=RED, font_size=24).next_to(curve_over, UP)
+        
+        self.play(Create(curve_over), Write(label_over))
+        self.wait(3)
+        
+        # 2. Ridge (L2)
+        pipe_ridge = make_pipeline(PolynomialFeatures(10), Ridge(alpha=5))
+        pipe_ridge.fit(x_reg.reshape(-1, 1), y_reg)
+        def pred_ridge(x): return pipe_ridge.predict([[x]]).item()
+        
+        curve_ridge = axes.plot(pred_ridge, color=GREEN, x_range=[0.5, 5.5])
+        label_ridge = Text("Ridge (L2)", color=GREEN, font_size=24).next_to(curve_ridge, UP)
+        
+        self.play(Transform(curve_over, curve_ridge), Transform(label_over, label_ridge))
+        self.wait(3)
+        
+        # 3. Lasso (L1)
+        pipe_lasso = make_pipeline(PolynomialFeatures(10), Lasso(alpha=0.1, max_iter=10000))
+        pipe_lasso.fit(x_reg.reshape(-1, 1), y_reg)
+        def pred_lasso(x): return pipe_lasso.predict([[x]]).item()
+        
+        curve_lasso = axes.plot(pred_lasso, color=ORANGE, x_range=[0.5, 5.5])
+        label_lasso = Text("Lasso (L1)", color=ORANGE, font_size=24).next_to(curve_lasso, UP)
+        
+        self.play(Transform(curve_over, curve_lasso), Transform(label_over, label_lasso))
+        self.wait(3)
+        
+        self.play(FadeOut(curve_over), FadeOut(label_over), FadeOut(dots_reg), FadeOut(axes))
+
+        # ---------------------------------------------------------
+        # ESCENA 6: MÉTRICAS (R2 vs R2 Adj)
+        # ---------------------------------------------------------
+        r2_text = Text("Métricas de Evaluación", font_size=36).to_edge(UP)
+        self.play(Write(r2_text))
+        
+        # Representación de métricas
+        r2_eq = MathTex(r"R^2", color=WHITE).shift(LEFT*2 + UP)
+        r2_adj_eq = MathTex(r"R^2_{adj}", color=YELLOW).shift(LEFT*2 + DOWN)
+        
+        val_r2 = DecimalNumber(0.85).next_to(r2_eq, RIGHT)
+        val_adj = DecimalNumber(0.83, color=YELLOW).next_to(r2_adj_eq, RIGHT)
+        
+        note = Text("Añadiendo variables basura...", font_size=24, color=RED).to_edge(RIGHT)
+        
+        self.play(Write(r2_eq), Write(val_r2), Write(r2_adj_eq), Write(val_adj))
+        self.wait(1)
+        self.play(FadeIn(note))
+        
+        # Simular efecto de añadir ruido
+        self.play(
+            ChangeDecimalToValue(val_r2, 0.86),      # R2 sube (engañoso)
+            ChangeDecimalToValue(val_adj, 0.60),     # R2 Adj baja (verdad)
+            run_time=3
+        )
+        self.wait(3)
+        
+        # ---------------------------------------------------------
+        # CONCLUSIÓN
+        # ---------------------------------------------------------
+        self.play(FadeOut(r2_eq), FadeOut(val_r2), FadeOut(r2_adj_eq), FadeOut(val_adj), FadeOut(note), FadeOut(r2_text))
+        
+        final = Text("¡Gracias!", font_size=48, color=BLUE)
+        self.play(Write(final))
         self.wait(3)
